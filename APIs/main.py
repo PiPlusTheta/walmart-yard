@@ -4,9 +4,8 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from os import getenv
 from basemodels import users, trailers, items, orders, queues
-
 from firebase_admin import credentials, firestore, auth, initialize_app
-import datetime
+from collections import deque
 
 cred = credentials.Certificate("serviceAccountKey.json")
 app = initialize_app(cred)
@@ -37,7 +36,7 @@ async def create_user(user: users, request: Request):
 async def read_user(uid: str):
     user = auth.get_user(uid)
     print("Successfully fetched user data: ", user)
-    
+
     return user
 
 
@@ -151,8 +150,9 @@ async def update_order(oid: str, order: orders):
 
 @app.delete("/orders/{oid}", response_model=dict)
 async def delete_order(oid: str):
-    doc_ref = db.collection("trailers").document(oid)
+    doc_ref = db.collection("orders").document(oid)
     doc = doc_ref.get()
+    print(doc.to_dict())
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Order not found")
     doc_ref.delete()
@@ -166,3 +166,24 @@ async def read_order(queue: str):
     if not docs.exists:
         raise HTTPException(status_code=404, detail="Order not found")
     return docs.to_dict()
+
+
+@app.put("/queues/trailersQueue")
+async def update_order():
+    trailersDoc = db.collection("queues").document("trailersQueue")
+    trailersDoc.update({"queue": firestore.ArrayUnion(["28"])})
+    trailers = deque(trailersDoc.get().to_dict()["queue"])
+    trailerID = trailers.popleft()
+    ordersDoc = db.collection("queues").document("ordersQueue")
+    orders = deque(ordersDoc.get().to_dict()["queue"])
+    if orders:
+        ordersID = orders.popleft()
+        order = db.collection("orders").document("ordersID")
+    return "Success!"
+
+
+@app.put("/queues/ordersQueue")
+async def update_order(queue: str):
+    doc_ref = db.collection("queues").document(queue)
+    doc_ref.update({"queue": firestore.ArrayUnion(["28"])})
+    return "Success!"
