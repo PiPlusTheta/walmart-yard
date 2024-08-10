@@ -9,6 +9,7 @@ from basemodels import trailers, items, orders, queues
 from firebase_admin import credentials, auth, initialize_app, firestore
 
 from collections import deque
+
 load_dotenv()
 
 cred = credentials.Certificate("serviceAccountKey.json")
@@ -21,15 +22,16 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_headers=['*'],
-    allow_methods=['*'],
-    allow_origins=['*'],
+    allow_headers=["*"],
+    allow_methods=["*"],
+    allow_origins=["*"],
 )
 
 
 @app.get("/")
 async def read_root():
     return {"Hello": "World"}
+
 
 """
     Trailers section
@@ -53,6 +55,7 @@ async def delete_trailer(trailer_id: str):
         raise HTTPException(status_code=404, detail="Trailer not found")
     doc_ref.delete()
     return {"detail": "Trailer deleted"}
+
 
 """
     Items section
@@ -91,6 +94,7 @@ async def delete_item(item_id: str):
     doc_ref.delete()
     return {"detail": "Item deleted"}
 
+
 """
     Orders section
 """
@@ -122,6 +126,7 @@ async def delete_order(order_id: str):
     doc_ref.delete()
     return {"detail": "Order deleted"}
 
+
 """
     Queue section
 """
@@ -146,8 +151,7 @@ async def enqueue_trailer(trailer: trailers):
 
     # Pushing current trailer to
     trailersQueueDoc = db.collection("queues").document("trailersQueue")
-    trailersQueueDoc.update(
-        {"queue": firestore.ArrayUnion([trailer.trailer_id])})
+    trailersQueueDoc.update({"queue": firestore.ArrayUnion([trailer.trailer_id])})
     trailersQueue = deque(trailersQueueDoc.get().to_dict()["queue"])
     trailersDoc = db.collection("trailers")
     # Gets the earliest Trailer
@@ -173,46 +177,56 @@ async def enqueue_trailer(trailer: trailers):
                 order["trailer_id"] = trailerID
                 # update_order(orderID, order)
                 ordersDoc.document(orderID).update(order)
-                trailersQueueDoc.update(
-                    {"queue": firestore.ArrayRemove([trailerID])})
-                ordersQueueDoc.update(
-                    {"queue": firestore.ArrayRemove([orderID])})
+                trailersQueueDoc.update({"queue": firestore.ArrayRemove([trailerID])})
+                ordersQueueDoc.update({"queue": firestore.ArrayRemove([orderID])})
                 break
 
     return {"detail": "Success"}
 
+
 # Fix required
 
 
-@app.put("/queues/ordersQueue/{trailerID}")
-async def allocTrailers(trailerID: str):
-    ordersDoc = db.collection("queues").document("ordersQueue")
-    ordersDoc.update({"queue": firestore.ArrayUnion([trailerID])})
-    ordersQueue = deque(ordersDoc.get().to_dict()["queue"])
+@app.put("/queues/ordersQueue")
+async def enqueue_order(order: orders):
+    if not order.order_id:
+        ordersDoc = db.collection("orders")
+        _, ref = ordersDoc.add(order.model_dump())
+        order.order_id = ref.id
+
+    ordersQueueDoc = db.collection("queues").document("ordersQueue")
+    ordersQueueDoc.update({"queue": firestore.ArrayUnion([order.order_id])})
+    ordersQueue = deque(ordersQueueDoc.get().to_dict()["queue"])
+    ordersDoc = db.collection("orders")
+
     orderID = ordersQueue.popleft()
-    trailersDoc = db.collection("queues").document("trailersQueue")
-    trailersQueue = deque(trailersDoc.get().to_dict()["queue"])
+    order = ordersDoc.document(orderID).get().to_dict()
+
+    trailersQueueDoc = db.collection("queues").document("trailersQueue")
+    trailersQueue = deque(trailersQueueDoc.get().to_dict()["queue"])
+    trailersDoc = db.collection("trailers")
+    trailers = {}
+
+    for trailer_doc in trailersDoc.stream():
+        trailers[trailer_doc.id] = trailer_doc.to_dict()
+
     if trailersQueue:
-        trailerRef = db.collection("trailers").document(trailerID)
-        trailerDoc = trailerRef.get()
-        if not trailerDoc.exists:
-            return {"detail": "Trailer not found"}
-        trailerData = trailerDoc.to_dict()
-        trailerCapacity = int(trailerData["capacity"])
-        orderRef = db.collection("orders").document(orderID)
-        orderDoc = orderRef.get()
-        if not orderDoc.exists:
-            return {"detail": "Order not found"}
-        orderData = orderDoc.to_dict()
-        orderQuantity = int(orderData["quantity"])
-        if trailerCapacity >= orderQuantity:
-            newCapacity = trailerCapacity - orderQuantity
-            trailerRef.update(
-                {"capacity": str(newCapacity), "status": "Allocated"})
-            orderRef.update({"status": "Allocated"})
-        else:
-            trailersQueue.append(trailerID)
-            ordersQueue.append(orderID)
-        trailersDoc.update({"queue": list(trailersQueue)})
-        ordersDoc.update({"queue": list(ordersQueue)})
+
+        for trailerID in trailersQueue:
+            trailer = trailers[trailerID]
+
+            print(trailer)
+
+            if order["quantity"] <= trailer["capacity"]:
+                order["status"] = "Move"
+                order["trailer_id"] = trailerID
+                ordersDoc.document(orderID).update(order)
+
+                trailer["order_id"] = orderID
+                # update_trailer(trailerID, trailer)
+                trailersDoc.document(trailerID).update(trailer)
+                ordersQueueDoc.update({"queue": firestore.ArrayRemove([orderID])})
+                trailersQueueDoc.update({"queue": firestore.ArrayRemove([trailerID])})
+                break
+
     return {"detail": "Success"}
