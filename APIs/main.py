@@ -162,8 +162,8 @@ async def enqueue_trailer(trailer: trailers):
     ordersQueue = deque(ordersQueueDoc.get().to_dict()["queue"])
     ordersDoc = db.collection("orders")
     orders = {}
-    for ords in ordersDoc.stream():
-        orders[ords.id] = ords.to_dict()
+    for order_doc in ordersDoc.stream():
+        orders[order_doc.id] = order_doc.to_dict()
     if ordersQueue:
         for orderID in ordersQueue:
             order = orders[orderID]
