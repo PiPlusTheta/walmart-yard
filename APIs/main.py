@@ -137,7 +137,7 @@ async def read_order(queue: str):
 
 
 @app.put("/queues/trailersQueue")
-async def enqueueTrailer(trailer: trailers):
+async def enqueue_trailer(trailer: trailers):
 
     if not trailer.trailer_id:
         trailersDoc = db.collection("trailers")
