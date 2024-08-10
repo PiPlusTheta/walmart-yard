@@ -164,3 +164,9 @@ APIs/cython_debug/
 
 # Firebase service account key
 APIs/serviceAccountKey.json
+
+# Node.js
+frontend/node_modules/
+frontend/npm-debug.log
+frontend/yarn-error.log
+frontend/.pnp.*
