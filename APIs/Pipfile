@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 fastapi = "*"
 firebase = "*"
+firebase-admin = "*"
 
 [dev-packages]
 

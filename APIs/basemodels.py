@@ -1,31 +1,25 @@
 from pydantic import BaseModel
-
-
-class users(BaseModel):
-    # role: str
-    email: str
-    email_verified: bool
-    phone_number: str
-    password: str
-    display_name: str
-    disabled: bool
+from typing import Union, Optional
 
 
 class trailers(BaseModel):
     capacity: str
     status: str
-    item_id: str
+    order_id: Optional[str]
+    trailer_id: None | str
 
 
 class items(BaseModel):
+    item_id: Optional[str]
     quantity: str
     name: str
     rackpos: str
 
 
 class orders(BaseModel):
-    tid: str
-    status: str
+    order_id: Optional[str]
+    trailer_id: Optional[str]
+    item_id: Optional[str]
     quantity: str
 
 

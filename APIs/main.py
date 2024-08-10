@@ -3,94 +3,62 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from os import getenv
-from basemodels import users, trailers, items, orders, queues
-from firebase_admin import credentials, firestore, auth, initialize_app
+from starlette.middleware.cors import CORSMiddleware
+import uvicorn
+from basemodels import trailers, items, orders, queues
+from firebase_admin import credentials, auth, initialize_app, firestore
+
 from collections import deque
+load_dotenv()
 
 cred = credentials.Certificate("serviceAccountKey.json")
 app = initialize_app(cred)
 db = firestore.client()
 
-load_dotenv()
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_headers=['*'],
+    allow_methods=['*'],
+    allow_origins=['*'],
+)
 
 
 @app.get("/")
 async def read_root():
     return {"Hello": "World"}
 
-
-@app.post("/users/")
-async def create_user(user: users, request: Request):
-    # print(request.json())
-    # doc_ref = db.collection("users")
-    # doc_ref.add(user.model_dump())
-    # return user
-
-    created_user = auth.create_user(**user.model_dump())
-    return "Sucessfully created new user: {0}".format(created_user.uid)
+"""
+    Trailers section
+"""
 
 
-@app.get("/users/{uid}")
-async def read_user(uid: str):
-    user = auth.get_user(uid)
-    print("Successfully fetched user data: ", user)
-
-    return user
-
-
-@app.put("/users/{uid}", response_model=users)
-async def update_user(user: users):
-    doc_ref = db.collection("users").document(user.uid)
-    doc_ref.update(user.model_dump())
-    return user
-
-
-@app.delete("/users/{uid}")
-async def delete_users(uid: str):
-    doc_ref = db.collection("users").document(uid)
-    doc = doc_ref.get()
-    if not doc.exists:
-        raise HTTPException(status_code=404, detail="User not found")
-    doc_ref.delete()
-    return {"detail": "User deleted"}
-
-
-@app.post("/trailers/", response_model=trailers)
-async def create_trailer(trailer: trailers):
-    doc_ref = db.collection("trailers").document(trailer.tid)
-    doc_ref.set(trailer.model_dump())
-    return trailer
-
-
-@app.get("/trailers/{tid}", response_model=trailers)
-async def read_trailer(tid: str):
-    doc_ref = db.collection("trailers").document(tid)
+@app.get("/trailers/{trailer_id}", response_model=trailers)
+async def read_trailer(trailer_id: str):
+    doc_ref = db.collection("trailers").document(trailer_id)
     doc = doc_ref.get()
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Trailer not found")
     return doc.to_dict()
 
 
-@app.put("/trailers/{tid}", response_model=trailers)
-async def update_trailer(tid: str, trailer: trailers):
-    doc_ref = db.collection("trailers").document(tid)
-    doc_ref.update(trailer.model_dump())
-    return trailer
-
-
-@app.delete("/trailers/{tid}", response_model=dict)
-async def delete_trailer(tid: str):
-    doc_ref = db.collection("trailers").document(tid)
+@app.delete("/trailers/{trailer_id}", response_model=dict)
+async def delete_trailer(trailer_id: str):
+    doc_ref = db.collection("trailers").document(trailer_id)
     doc = doc_ref.get()
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Trailer not found")
     doc_ref.delete()
     return {"detail": "Trailer deleted"}
 
+"""
+    Items section
+"""
 
-# Items CRUD operations
+
 @app.post("/items/", response_model=items)
 async def create_item(item: items):
     doc_ref = db.collection("items")
@@ -123,8 +91,11 @@ async def delete_item(item_id: str):
     doc_ref.delete()
     return {"detail": "Item deleted"}
 
+"""
+    Orders section
+"""
 
-# orders CRUD operations
+
 @app.post("/orders/", response_model=orders)
 async def create_order(order: orders):
     doc_ref = db.collection("orders")
@@ -132,25 +103,18 @@ async def create_order(order: orders):
     return order
 
 
-@app.get("/orders/{oid}", response_model=orders)
-async def read_order(oid: str):
-    doc_ref = db.collection("orders").document(oid)
+@app.get("/orders/{order_id}", response_model=orders)
+async def read_order(order_id: str):
+    doc_ref = db.collection("orders").document(order_id)
     doc = doc_ref.get()
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Order not found")
     return doc.to_dict()
 
 
-@app.put("/orders/{oid}", response_model=orders)
-async def update_order(oid: str, order: orders):
-    doc_ref = db.collection("orders").document(oid)
-    doc_ref.update(order.model_dump())
-    return order
-
-
-@app.delete("/orders/{oid}", response_model=dict)
-async def delete_order(oid: str):
-    doc_ref = db.collection("orders").document(oid)
+@app.delete("/orders/{order_id}", response_model=dict)
+async def delete_order(order_id: str):
+    doc_ref = db.collection("orders").document(order_id)
     doc = doc_ref.get()
     print(doc.to_dict())
     if not doc.exists:
@@ -158,47 +122,66 @@ async def delete_order(oid: str):
     doc_ref.delete()
     return {"detail": "Order deleted"}
 
+"""
+    Queue section
+"""
+
 
 @app.get("/queues/{queue}", response_model=queues)
 async def read_order(queue: str):
     doc_ref = db.collection("queues").document(queue)
-    docs = doc_ref.get()
+    docs = await doc_ref.get()
     if not docs.exists:
         raise HTTPException(status_code=404, detail="Order not found")
     return docs.to_dict()
 
 
-@app.put("/queues/trailersQueue/{orderID}")
-async def allocOrders(orderID: str):
-    trailersDoc = db.collection("queues").document("trailersQueue")
-    trailersDoc.update({"queue": firestore.ArrayUnion([orderID])})
-    trailersQueue = deque(trailersDoc.get().to_dict()["queue"])
+@app.put("/queues/trailersQueue")
+async def enqueueTrailer(trailer: trailers):
+
+    if not trailer.trailer_id:
+        trailersDoc = db.collection("trailers")
+        _, ref = trailersDoc.add(trailer.model_dump())
+        trailer.trailer_id = ref.id
+
+    # Pushing current trailer to
+    trailersQueueDoc = db.collection("queues").document("trailersQueue")
+    trailersQueueDoc.update(
+        {"queue": firestore.ArrayUnion([trailer.trailer_id])})
+    trailersQueue = deque(trailersQueueDoc.get().to_dict()["queue"])
+    trailersDoc = db.collection("trailers")
+    # Gets the earliest Trailer
     trailerID = trailersQueue.popleft()
-    ordersDoc = db.collection("queues").document("ordersQueue")
-    ordersQueue = deque(ordersDoc.get().to_dict()["queue"])
+    trailer = trailersDoc.document(trailerID).get().to_dict()
+
+    ordersQueueDoc = db.collection("queues").document("ordersQueue")
+    ordersQueue = deque(ordersQueueDoc.get().to_dict()["queue"])
+    ordersDoc = db.collection("orders")
+    orders = {}
+    for ords in ordersDoc.stream():
+        orders[ords.id] = ords.to_dict()
     if ordersQueue:
-        orderRef = db.collection("orders").document(orderID)
-        orderDoc = orderRef.get()
-        if not orderDoc.exists:
-            return {"detail": "Order not found"}
-        orderData = orderDoc.to_dict()
-        orderQuantity = int(orderData["quantity"])
-        trailerRef = db.collection("trailers").document(trailerID)
-        trailerDoc = trailerRef.get()
-        if not trailerDoc.exists:
-            return {"detail": "Trailer not found"}
-        trailerData = trailerDoc.to_dict()
-        trailerCapacity = int(trailerData["capacity"])
-        if trailerCapacity >= orderQuantity:
-            newCapacity = trailerCapacity - orderQuantity
-            trailerRef.update({"capacity": str(newCapacity), "status": "Allocated"})
-            orderRef.update({"status": "Allocated"})
-        else:
-            ordersQueue.append(orderID)
-            trailersQueue.append(trailerID)
-        trailersDoc.update({"queue": list(trailersQueue)})
-        ordersDoc.update({"queue": list(ordersQueue)})
+        for orderID in ordersQueue:
+            order = orders[orderID]
+            # if the capacity of order can be fit inside the trailer
+            print(order)
+            if order["quantity"] <= trailer["capacity"]:
+                trailer["status"] = "Move"
+                trailer["order_id"] = orderID
+                trailersDoc.document(trailerID).update(trailer)
+                # update_trailer(trailerID, trailer)
+                order["trailer_id"] = trailerID
+                # update_order(orderID, order)
+                ordersDoc.document(orderID).update(order)
+                trailersQueueDoc.update(
+                    {"queue": firestore.ArrayRemove([trailerID])})
+                ordersQueueDoc.update(
+                    {"queue": firestore.ArrayRemove([orderID])})
+                break
+
     return {"detail": "Success"}
+
+# Fix required
 
 
 @app.put("/queues/ordersQueue/{trailerID}")
@@ -224,7 +207,8 @@ async def allocTrailers(trailerID: str):
         orderQuantity = int(orderData["quantity"])
         if trailerCapacity >= orderQuantity:
             newCapacity = trailerCapacity - orderQuantity
-            trailerRef.update({"capacity": str(newCapacity), "status": "Allocated"})
+            trailerRef.update(
+                {"capacity": str(newCapacity), "status": "Allocated"})
             orderRef.update({"status": "Allocated"})
         else:
             trailersQueue.append(trailerID)
@@ -232,10 +216,3 @@ async def allocTrailers(trailerID: str):
         trailersDoc.update({"queue": list(trailersQueue)})
         ordersDoc.update({"queue": list(ordersQueue)})
     return {"detail": "Success"}
-
-
-@app.put("/queues/ordersQueue")
-async def update_order(queue: str):
-    doc_ref = db.collection("queues").document(queue)
-    doc_ref.update({"queue": firestore.ArrayUnion(["28"])})
-    return "Success!"
