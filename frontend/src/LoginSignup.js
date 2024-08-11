@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGoogle } from '@fortawesome/free-brands-svg-icons';
-import { auth, googleProvider } from './firebaseConfig';
+import { auth, googleProvider, db } from './firebaseConfig';
 import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
-import { useNavigate } from 'react-router-dom'; // Import useNavigate
+import { doc, setDoc } from "firebase/firestore";
+import { useNavigate } from 'react-router-dom';
 
 const AdvancedLogin = () => {
   const [isActive, setIsActive] = useState(false);
@@ -12,7 +13,7 @@ const AdvancedLogin = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const navigate = useNavigate(); // Initialize useNavigate
+  const navigate = useNavigate();
 
   const handleToggle = () => {
     setIsActive(!isActive);
@@ -26,8 +27,19 @@ const AdvancedLogin = () => {
       return;
     }
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
-      navigate('/admin-dashboard'); // Redirect after successful sign-up
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      await setDoc(doc(db, "users", user.uid), {
+        displayName: name,
+        email: user.email,
+        emailVerified: user.emailVerified,
+        phoneNumber: user.phoneNumber || null,
+        role: "trailer",
+        disabled: false
+      });
+
+      navigate('/admin-dashboard');
     } catch (error) {
       setError(error.message);
     }
@@ -36,8 +48,19 @@ const AdvancedLogin = () => {
   const handleSignIn = async (e) => {
     e.preventDefault();
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      navigate('/admin-dashboard'); // Redirect after successful sign-in
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      await setDoc(doc(db, "users", user.uid), {
+        displayName: name,
+        email: user.email,
+        emailVerified: user.emailVerified,
+        phoneNumber: user.phoneNumber || null,
+        role: "trailer",
+        disabled: false
+      }, { merge: true });
+
+      navigate('/admin-dashboard');
     } catch (error) {
       setError(error.message);
     }
@@ -45,8 +68,19 @@ const AdvancedLogin = () => {
 
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
-      navigate('/admin-dashboard'); // Redirect after successful Google sign-in
+      const userCredential = await signInWithPopup(auth, googleProvider);
+      const user = userCredential.user;
+
+      await setDoc(doc(db, "users", user.uid), {
+        displayName: user.displayName,
+        email: user.email,
+        emailVerified: user.emailVerified,
+        phoneNumber: user.phoneNumber || null,
+        role: "trailer",
+        disabled: false
+      });
+
+      navigate('/admin-dashboard');
     } catch (error) {
       setError(error.message);
     }
@@ -67,52 +101,67 @@ const AdvancedLogin = () => {
 
   return (
     <div className={`container ${isActive ? 'active' : ''}`}>
-      <div className="form-container sign-up">
-        <form onSubmit={handleSignUp}>
-          <h1>Create Account</h1>
-          <div className="social-icons">
-            <a href="#" onClick={handleGoogleSignIn} aria-label="Sign up with Google">
-              <FontAwesomeIcon icon={faGoogle} />
-            </a>
-          </div>
-          <span>or use your email for registration</span>
-          <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
-          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          <input type="password" placeholder="Confirm Password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
-          {error && <p className="error">{error}</p>}
-          <button type="submit">Sign Up</button>
-        </form>
-      </div>
-      <div className="form-container sign-in">
-        <form onSubmit={handleSignIn}>
-          <h1>Sign In</h1>
-          <div className="social-icons">
-            <a href="#" onClick={handleGoogleSignIn} aria-label="Sign in with Google">
-              <FontAwesomeIcon icon={faGoogle} />
-            </a>
-          </div>
-          <span>or use your email password</span>
-          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          <a href="#" onClick={handleForgotPassword}>Forgot Your Password?</a>
-          {error && <p className="error">{error}</p>}
-          <button type="submit">Sign In</button>
-        </form>
-      </div>
       <div className="toggle-container">
-        <div className="toggle">
+        <div className={`toggle ${isActive ? 'active' : ''}`}>
           <div className="toggle-panel toggle-left">
-            <h1>Welcome Back!</h1>
-            <p>Enter your personal details to use all of site features</p>
+            <h2>Welcome Back!</h2>
+            <p>To keep connected with us, please login with your personal info.</p>
             <button className="toggle-button" onClick={handleToggle}>Sign In</button>
           </div>
           <div className="toggle-panel toggle-right">
-            <h1>Hello, Friend!</h1>
-            <p>Register with your personal details to use all of site features</p>
+            <h2>Hello, Friend!</h2>
+            <p>Enter your personal details and start your journey with us.</p>
             <button className="toggle-button" onClick={handleToggle}>Sign Up</button>
           </div>
         </div>
+      </div>
+      <div className={`form-container ${isActive ? 'sign-up' : 'sign-in'}`}>
+        <form onSubmit={isActive ? handleSignUp : handleSignIn}>
+          {isActive && (
+            <input
+              type="text"
+              placeholder="Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          )}
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          {isActive && (
+            <input
+              type="password"
+              placeholder="Confirm Password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+            />
+          )}
+          <button type="submit">{isActive ? 'Sign Up' : 'Sign In'}</button>
+          {!isActive && (
+            <>
+              <button type="button" onClick={handleGoogleSignIn}>
+                <FontAwesomeIcon icon={faGoogle} /> Sign in with Google
+              </button>
+              <p onClick={handleForgotPassword} className="forgot-password">
+                Forgot Password?
+              </p>
+            </>
+          )}
+          {error && <p className="error">{error}</p>}
+        </form>
       </div>
       <style jsx>{`
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap');
@@ -348,6 +397,14 @@ const AdvancedLogin = () => {
           color: red;
           font-size: 12px;
           margin-top: 5px;
+        }
+
+        .forgot-password {
+          color: #0071ce;
+          font-size: 12px;
+          margin-top: 10px;
+          cursor: pointer;
+          text-decoration: underline;
         }
       `}</style>
     </div>
