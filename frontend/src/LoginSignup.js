@@ -1,108 +1,86 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from './firebaseConfig';
-import { setDoc, doc, getDoc } from 'firebase/firestore';
-import { db } from './firebaseConfig';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faGooglePlusG, faFacebookF, faGithub, faLinkedinIn } from '@fortawesome/free-brands-svg-icons';
+import { faGoogle } from '@fortawesome/free-brands-svg-icons';
+import { auth, googleProvider } from './firebaseConfig';
+import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
+import { useNavigate } from 'react-router-dom'; // Import useNavigate
 
-const LoginSignup = () => {
-  const navigate = useNavigate();
+const AdvancedLogin = () => {
+  const [isActive, setIsActive] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const navigate = useNavigate(); // Initialize useNavigate
 
-  // Sign Up State
-  const [signUpData, setSignUpData] = useState({
-    role: '',
-    email: '',
-    emailVerified: false,
-    phoneNumber: '',
-    password: '',
-    displayName: '',
-    disabled: false
-  });
-
-  // Sign In State
-  const [signInData, setSignInData] = useState({
-    email: '',
-    password: ''
-  });
-
-  const handleSignUpChange = (e) => {
-    setSignUpData({ ...signUpData, [e.target.name]: e.target.value });
-  };
-
-  const handleSignInChange = (e) => {
-    setSignInData({ ...signInData, [e.target.name]: e.target.value });
+  const handleToggle = () => {
+    setIsActive(!isActive);
+    setError('');
   };
 
   const handleSignUp = async (e) => {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      setError("Passwords don't match");
+      return;
+    }
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, signUpData.email, signUpData.password);
-      const user = userCredential.user;
-
-      await setDoc(doc(db, "users", user.uid), {
-        role: signUpData.role,
-        email: signUpData.email,
-        emailVerified: false,
-        phoneNumber: signUpData.phoneNumber,
-        displayName: signUpData.displayName,
-        disabled: false
-      });
-
-      console.log('User signed up successfully');
-      alert('Sign up successful! Please log in.');
+      await createUserWithEmailAndPassword(auth, email, password);
+      navigate('/admin-dashboard'); // Redirect after successful sign-up
     } catch (error) {
-      console.error('Error signing up:', error.message);
-      alert('Sign up failed: ' + error.message);
+      setError(error.message);
     }
   };
 
   const handleSignIn = async (e) => {
     e.preventDefault();
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, signInData.email, signInData.password);
-      const user = userCredential.user;
-
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        if (userData.role === 'admin') {
-          navigate('/admin-dashboard');
-        } else {
-          navigate('/warehouse');
-        }
-      } else {
-        console.error('User document not found');
-        alert('User data not found. Please contact support.');
-      }
+      await signInWithEmailAndPassword(auth, email, password);
+      navigate('/admin-dashboard'); // Redirect after successful sign-in
     } catch (error) {
-      console.error('Error signing in:', error.message);
-      alert('Sign in failed: ' + error.message);
+      setError(error.message);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+      navigate('/admin-dashboard'); // Redirect after successful Google sign-in
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError('Please enter your email address');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert('Password reset email sent. Check your inbox.');
+    } catch (error) {
+      setError(error.message);
     }
   };
 
   return (
-    <div className="container">
+    <div className={`container ${isActive ? 'active' : ''}`}>
       <div className="form-container sign-up">
         <form onSubmit={handleSignUp}>
           <h1>Create Account</h1>
           <div className="social-icons">
-            <a href="#" className="icon"><FontAwesomeIcon icon={faGooglePlusG} /></a>
-            <a href="#" className="icon"><FontAwesomeIcon icon={faFacebookF} /></a>
-            <a href="#" className="icon"><FontAwesomeIcon icon={faGithub} /></a>
-            <a href="#" className="icon"><FontAwesomeIcon icon={faLinkedinIn} /></a>
+            <a href="#" onClick={handleGoogleSignIn} aria-label="Sign up with Google">
+              <FontAwesomeIcon icon={faGoogle} />
+            </a>
           </div>
           <span>or use your email for registration</span>
-          <input type="text" name="displayName" placeholder="Name" onChange={handleSignUpChange} required />
-          <input type="email" name="email" placeholder="Email" onChange={handleSignUpChange} required />
-          <input type="password" name="password" placeholder="Password" onChange={handleSignUpChange} required />
-          <input type="tel" name="phoneNumber" placeholder="Phone Number" onChange={handleSignUpChange} required />
-          <select name="role" onChange={handleSignUpChange} required>
-            <option value="">Select Role</option>
-            <option value="admin">Admin</option>
-            <option value="user">User</option>
-          </select>
+          <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <input type="password" placeholder="Confirm Password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+          {error && <p className="error">{error}</p>}
           <button type="submit">Sign Up</button>
         </form>
       </div>
@@ -110,17 +88,31 @@ const LoginSignup = () => {
         <form onSubmit={handleSignIn}>
           <h1>Sign In</h1>
           <div className="social-icons">
-            <a href="#" className="icon"><FontAwesomeIcon icon={faGooglePlusG} /></a>
-            <a href="#" className="icon"><FontAwesomeIcon icon={faFacebookF} /></a>
-            <a href="#" className="icon"><FontAwesomeIcon icon={faGithub} /></a>
-            <a href="#" className="icon"><FontAwesomeIcon icon={faLinkedinIn} /></a>
+            <a href="#" onClick={handleGoogleSignIn} aria-label="Sign in with Google">
+              <FontAwesomeIcon icon={faGoogle} />
+            </a>
           </div>
           <span>or use your email password</span>
-          <input type="email" name="email" placeholder="Email" onChange={handleSignInChange} required />
-          <input type="password" name="password" placeholder="Password" onChange={handleSignInChange} required />
-          <a href="#">Forgot Your Password?</a>
+          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <a href="#" onClick={handleForgotPassword}>Forgot Your Password?</a>
+          {error && <p className="error">{error}</p>}
           <button type="submit">Sign In</button>
         </form>
+      </div>
+      <div className="toggle-container">
+        <div className="toggle">
+          <div className="toggle-panel toggle-left">
+            <h1>Welcome Back!</h1>
+            <p>Enter your personal details to use all of site features</p>
+            <button className="toggle-button" onClick={handleToggle}>Sign In</button>
+          </div>
+          <div className="toggle-panel toggle-right">
+            <h1>Hello, Friend!</h1>
+            <p>Register with your personal details to use all of site features</p>
+            <button className="toggle-button" onClick={handleToggle}>Sign Up</button>
+          </div>
+        </div>
       </div>
       <style jsx>{`
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap');
@@ -133,59 +125,125 @@ const LoginSignup = () => {
         }
 
         body {
-          background-color: #f6f5f7;
+          background-color: #0071ce;
+          background: linear-gradient(to right, #0071ce, #004ba0);
           display: flex;
-          justify-content: center;
           align-items: center;
+          justify-content: center;
           flex-direction: column;
-          font-family: 'Montserrat', sans-serif;
           height: 100vh;
-          margin: -20px 0 50px;
         }
 
         .container {
           background-color: #fff;
-          border-radius: 10px;
-          box-shadow: 0 14px 28px rgba(0,0,0,0.25), 0 10px 10px rgba(0,0,0,0.22);
+          border-radius: 30px;
+          box-shadow: 0 5px 15px rgba(0, 0, 0, 0.35);
           position: relative;
           overflow: hidden;
-          width: 1000px;
+          width: 768px;
           max-width: 100%;
           min-height: 480px;
-          display: flex;
         }
 
-        .form-container {
-          position: relative;
-          top: 0;
-          width: 50%;
-          height: 100%;
-          padding: 30px;
+        .container p {
+          font-size: 14px;
+          line-height: 20px;
+          letter-spacing: 0.3px;
+          margin: 20px 0;
         }
 
-        .sign-up {
-          background-color: #f6f5f7;
+        .container span {
+          font-size: 12px;
         }
 
-        .sign-in {
-          background-color: #ffffff;
+        .container a {
+          color: #333;
+          font-size: 13px;
+          text-decoration: none;
+          margin: 15px 0 10px;
         }
 
-        form {
-          background-color: inherit;
+        .container button {
+          background-color: #ffbc00;
+          color: #0071ce;
+          font-size: 12px;
+          padding: 10px 45px;
+          border: 1px solid transparent;
+          border-radius: 8px;
+          font-weight: 600;
+          letter-spacing: 0.5px;
+          text-transform: uppercase;
+          margin-top: 10px;
+          cursor: pointer;
+        }
+
+        .container button.hidden {
+          background-color: transparent;
+          border-color: #fff;
+        }
+
+        .container form {
+          background-color: #fff;
           display: flex;
           align-items: center;
           justify-content: center;
           flex-direction: column;
-          padding: 0 50px;
+          padding: 0 40px;
           height: 100%;
-          text-align: center;
         }
 
-        h1 {
-          font-weight: bold;
-          margin: 0;
-          margin-bottom: 15px;
+        .container input {
+          background-color: #eee;
+          border: none;
+          margin: 8px 0;
+          padding: 10px 15px;
+          font-size: 13px;
+          border-radius: 8px;
+          width: 100%;
+          outline: none;
+        }
+
+        .form-container {
+          position: absolute;
+          top: 0;
+          height: 100%;
+          transition: all 0.15s ease-in-out;
+        }
+
+        .sign-in {
+          left: 0;
+          width: 50%;
+          z-index: 2;
+        }
+
+        .sign-up {
+          left: 0;
+          width: 50%;
+          opacity: 0;
+          z-index: 1;
+        }
+
+        .container.active .sign-in {
+          transform: translateX(100%);
+        }
+
+        .container.active .sign-up {
+          transform: translateX(100%);
+          opacity: 1;
+          z-index: 5;
+          animation: move 0.15s;
+        }
+
+        @keyframes move {
+          0%, 49.99% {
+            opacity: 0;
+            z-index: 1;
+          }
+          
+          50%, 100% {
+            opacity: 1;
+            z-index: 5;
+          }
         }
 
         .social-icons {
@@ -194,63 +252,106 @@ const LoginSignup = () => {
 
         .social-icons a {
           border: 1px solid #ccc;
-          border-radius: 50%;
+          border-radius: 20%;
           display: inline-flex;
           justify-content: center;
           align-items: center;
-          margin: 0 5px;
-          height: 40px;
+          margin: 0 3px;
           width: 40px;
-          text-decoration: none;
-          color: #333;
+          height: 40px;
         }
 
-        span {
-          font-size: 12px;
-          margin-bottom: 15px;
+        .toggle-container {
+          position: absolute;
+          top: 0;
+          left: 50%;
+          width: 50%;
+          height: 100%;
+          overflow: hidden;
+          transition: all 0.15s ease-in-out;
+          border-radius: 150px 0 0 100px;
+          z-index: 1000;
         }
 
-        input, select {
-          background-color: #eee;
-          border: none;
-          padding: 12px 15px;
-          margin: 8px 0;
-          width: 100%;
-          font-size: 13px;
+        .container.active .toggle-container {
+          transform: translateX(-100%);
+          border-radius: 0 150px 100px 0;
         }
 
-        button {
-          border-radius: 20px;
-          border: 1px solid #512da8;
-          background-color: #512da8;
-          color: #FFFFFF;
-          font-size: 12px;
-          font-weight: bold;
-          padding: 12px 45px;
-          letter-spacing: 1px;
-          text-transform: uppercase;
-          transition: transform 80ms ease-in;
-          margin-top: 15px;
+        .toggle {
+          background-color: #0071ce;
+          height: 100%;
+          background: linear-gradient(to right, #004ba0, #0071ce);
+          color: #fff;
+          position: relative;
+          left: -100%;
+          height: 100%;
+          width: 200%;
+          transform: translateX(0);
+          transition: all 0.15s ease-in-out;
+        }
+
+        .container.active .toggle {
+          transform: translateX(50%);
+        }
+
+        .toggle-panel {
+          position: absolute;
+          width: 50%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-direction: column;
+          padding: 0 30px;
+          text-align: center;
+          top: 0;
+          transform: translateX(0);
+          transition: all 0.1s ease-in-out;
+        }
+
+        .toggle-left {
+          transform: translateX(-200%);
+        }
+
+        .container.active .toggle-left {
+          transform: translateX(0);
+        }
+
+        .toggle-right {
+          right: 0;
+          transform: translateX(0);
+        }
+
+        .container.active .toggle-right {
+          transform: translateX(200%);
+        }
+
+        .toggle-button {
+          margin-top: 20px;
+          background-color: transparent;
+          border: 2px solid #fff;
+          color: #fff;
+          font-size: 16px;
+          padding: 10px 30px;
+          border-radius: 30px;
           cursor: pointer;
+          transition: all 0.1s ease;
         }
 
-        button:active {
-          transform: scale(0.95);
+        .toggle-button:hover {
+          background-color: #fff;
+          color: #0071ce;
         }
 
-        button:focus {
-          outline: none;
-        }
-
-        a {
-          color: #333;
-          font-size: 14px;
-          text-decoration: none;
-          margin: 15px 0;
+        .error {
+          color: red;
+          font-size: 12px;
+          margin-top: 5px;
         }
       `}</style>
     </div>
   );
 };
 
-export default LoginSignup;
+export default AdvancedLogin;
